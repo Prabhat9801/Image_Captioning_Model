@@ -3,14 +3,15 @@ import tensorflow as tf
 import numpy as np
 import json
 import pickle
-from tensorflow.keras.models import load_model
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Dense, LSTM, Embedding, Dropout, Add, BatchNormalization
 from tensorflow.keras.preprocessing.image import img_to_array
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.applications.inception_v3 import InceptionV3, preprocess_input
 from PIL import Image
 
 # --- Configuration paths ---
-MODEL_PATH = "caption_model_final.h5"  # Using H5 format for compatibility
+MODEL_WEIGHTS_PATH = "model_weights.h5"
 TOKENIZER_DATA_PATH = "tokenizer_data.json"
 CONFIG_PATH = "model_config.pkl"
 
@@ -30,7 +31,6 @@ with open(TOKENIZER_DATA_PATH, 'r') as f:
 class SimpleTokenizer:
     def __init__(self, word_index, index_word):
         self.word_index = word_index
-        # Convert string keys back to integers for index_word
         self.index_word = {int(k): v for k, v in index_word.items()}
     
     def texts_to_sequences(self, texts):
@@ -44,9 +44,9 @@ class SimpleTokenizer:
 # Initialize tokenizer
 tokenizer = SimpleTokenizer(tokenizer_data['word_index'], tokenizer_data['index_word'])
 vocab_size = len(tokenizer.word_index) + 1
-print(f"Tokenizer loaded successfully! Vocabulary size: {vocab_size}")
+print(f"Tokenizer loaded! Vocabulary size: {vocab_size}")
 
-# --- Load the pre-trained InceptionV3 model for feature extraction ---
+# --- Load InceptionV3 for feature extraction ---
 print("Loading InceptionV3 model...")
 inception_v3_model = InceptionV3(weights='imagenet', input_shape=(299, 299, 3))
 inception_v3_model = tf.keras.Model(
@@ -54,13 +54,34 @@ inception_v3_model = tf.keras.Model(
     outputs=inception_v3_model.layers[-2].output
 )
 
-# --- Load the captioning model (H5 format is more compatible) ---
-print("Loading caption generation model...")
-caption_model = load_model(MODEL_PATH, compile=False)
-print("All models loaded successfully!")
+# --- Rebuild the caption model architecture ---
+print("Building caption model architecture...")
 
+# Image feature input
+image_features_input = Input(shape=(cnn_output_dim,), name='Features_Input')
+image_features_bn = BatchNormalization()(image_features_input)
+image_features_dense = Dense(256, activation='relu')(image_features_bn)
+image_features_bn2 = BatchNormalization()(image_features_dense)
 
-# --- Define utility functions ---
+# Sequence input
+sequence_input = Input(shape=(max_caption_length,), name='Sequence_Input')
+sequence_embedding = Embedding(vocab_size, 256, mask_zero=True)(sequence_input)
+sequence_lstm = LSTM(256)(sequence_embedding)
+
+# Merge features
+merged = Add()([image_features_bn2, sequence_lstm])
+merged_dense = Dense(256, activation='relu')(merged)
+output = Dense(vocab_size, activation='softmax', name='Output_Layer')(merged_dense)
+
+# Create model
+caption_model = Model(inputs=[image_features_input, sequence_input], outputs=output)
+
+# Load weights
+print("Loading model weights...")
+caption_model.load_weights(MODEL_WEIGHTS_PATH)
+print("Model loaded successfully!")
+
+# --- Utility functions ---
 def preprocess_image(image_pil):
     """Preprocess PIL image for InceptionV3"""
     img = image_pil.resize((299, 299))
@@ -69,16 +90,14 @@ def preprocess_image(image_pil):
     img = preprocess_input(img)
     return img
 
-
 def extract_image_features(model, image_pil):
     """Extract features from image using InceptionV3"""
     img_processed = preprocess_image(image_pil)
     features = model.predict(img_processed, verbose=0)
     return features.flatten()
 
-
 def greedy_generator(image_features):
-    """Generate caption using greedy search algorithm"""
+    """Generate caption using greedy search"""
     in_text = 'start'
     for _ in range(max_caption_length):
         sequence = tokenizer.texts_to_sequences([in_text])[0]
@@ -95,14 +114,12 @@ def greedy_generator(image_features):
         if word == 'end':
             break
 
-    # Clean up the caption
     in_text = in_text.replace('start ', '').replace(' start', '')
     in_text = in_text.replace(' end', '').replace('end', '')
     return in_text.strip()
 
-
 def beam_search_generator(image_features, K_beams=3):
-    """Generate caption using beam search algorithm"""
+    """Generate caption using beam search"""
     start = [tokenizer.word_index.get('start', 1)]
     start_word = [[start, 0.0]]
     
@@ -114,15 +131,14 @@ def beam_search_generator(image_features, K_beams=3):
             word_preds = np.argsort(preds[0])[-K_beams:]
             
             for w in word_preds:
-                if w == 0:  # Skip padding token
+                if w == 0:
                     continue
                 next_cap, prob = s[0][:], s[1]
                 next_cap.append(w)
-                prob += np.log(preds[0][w] + 1e-10)  # Add small epsilon to avoid log(0)
+                prob += np.log(preds[0][w] + 1e-10)
                 temp.append([next_cap, prob])
 
         start_word = temp
-        # Sort by probability (higher is better for log-probs) and keep top K_beams
         start_word = sorted(start_word, reverse=True, key=lambda l: l[1])
         start_word = start_word[:K_beams]
 
@@ -140,147 +156,76 @@ def beam_search_generator(image_features, K_beams=3):
         elif i == 'end':
             break
 
-    final_caption = ' '.join(final_caption)
-    return final_caption.strip()
+    return ' '.join(final_caption).strip()
 
-
-# --- Gradio Interface Function ---
+# --- Gradio Interface ---
 def generate_captions_gradio(image):
     """Main function for Gradio interface"""
     if image is None:
-        return "⚠️ Please upload an image.", "⚠️ Please upload an image."
+        return "Please upload an image.", "Please upload an image."
 
     try:
-        # Convert to PIL Image if needed
         if not isinstance(image, Image.Image):
             image = Image.fromarray(image)
         
-        # Convert to RGB if image is in different mode
         if image.mode != 'RGB':
             image = image.convert('RGB')
 
-        # Extract features
         image_features = extract_image_features(inception_v3_model, image)
-
-        # Generate captions
         greedy_cap = greedy_generator(image_features)
         beam_cap = beam_search_generator(image_features, K_beams=3)
 
-        # Format output
-        greedy_output = f"🔍 **Greedy Search Caption:**\n\n{greedy_cap.capitalize()}"
-        beam_output = f"🎯 **Beam Search Caption (K=3):**\n\n{beam_cap.capitalize()}"
+        greedy_output = f"**Greedy Search:**\n\n{greedy_cap.capitalize()}"
+        beam_output = f"**Beam Search (K=3):**\n\n{beam_cap.capitalize()}"
 
         return greedy_output, beam_output
     
     except Exception as e:
-        error_msg = f"❌ Error: {str(e)}"
+        error_msg = f"Error: {str(e)}"
         return error_msg, error_msg
 
-
-# --- Custom CSS for better styling ---
-custom_css = """
-#component-0 {
-    max-width: 900px;
-    margin: auto;
-    padding: 20px;
-}
-.gradio-container {
-    font-family: 'Inter', sans-serif;
-}
-h1 {
-    text-align: center;
-    color: #2563eb;
-    margin-bottom: 10px;
-}
-.description {
-    text-align: center;
-    color: #64748b;
-    margin-bottom: 20px;
-}
-"""
-
 # --- Gradio App ---
-with gr.Blocks(css=custom_css, theme=gr.themes.Soft()) as demo:
+with gr.Blocks(theme=gr.themes.Soft()) as demo:
     gr.Markdown(
         """
         # 🖼️ Image Captioning Model
-        ### Generate natural language descriptions for your images using deep learning
+        ### Generate natural language descriptions for your images
         
-        This model uses **InceptionV3** for feature extraction and **LSTM** for caption generation.
         Upload an image and get captions using two different algorithms:
-        - **Greedy Search**: Fast, deterministic caption generation
-        - **Beam Search (K=3)**: Higher quality captions with beam width of 3
+        - **Greedy Search**: Fast caption generation
+        - **Beam Search (K=3)**: Higher quality captions
         """
     )
     
     with gr.Row():
-        with gr.Column(scale=1):
-            image_input = gr.Image(
-                type="pil", 
-                label="📤 Upload Image",
-                height=400
-            )
-            generate_btn = gr.Button(
-                "✨ Generate Captions", 
-                variant="primary",
-                size="lg"
-            )
+        with gr.Column():
+            image_input = gr.Image(type="pil", label="Upload Image")
+            generate_btn = gr.Button("Generate Captions", variant="primary")
             
-        with gr.Column(scale=1):
-            greedy_output = gr.Textbox(
-                label="Greedy Search Result",
-                lines=4,
-                interactive=False
-            )
-            beam_output = gr.Textbox(
-                label="Beam Search Result",
-                lines=4,
-                interactive=False
-            )
+        with gr.Column():
+            greedy_output = gr.Textbox(label="Greedy Search Result", lines=3)
+            beam_output = gr.Textbox(label="Beam Search Result", lines=3)
     
     gr.Markdown(
         """
         ---
-        ### 📊 About the Model
+        **Model**: CNN-RNN (InceptionV3 + LSTM) | **Dataset**: Flickr8k
         
-        - **Architecture**: CNN-RNN (InceptionV3 + LSTM)
-        - **Training Dataset**: Flickr8k (8,000 images with 40,000 captions)
-        - **Vocabulary Size**: ~8,000 words
-        - **Max Caption Length**: Variable (typically 20-30 words)
-        
-        ### 🎯 How it Works
-        
-        1. **Feature Extraction**: InceptionV3 extracts visual features from the image
-        2. **Caption Generation**: LSTM network generates word-by-word descriptions
-        3. **Decoding**: Two algorithms produce different quality captions
-        
-        ### 💡 Tips for Best Results
-        
-        - Use clear, well-lit images
-        - Images with common objects work best
-        - The model performs well on everyday scenes and activities
-        
-        ---
-        
-        **Created by**: Prabhar Kumar Singh  
-        **GitHub**: [Prabhat9801/Image_Captioning_Model](https://github.com/Prabhat9801/Image_Captioning_Model)
+        **Created by**: Prabhar Kumar Singh | [GitHub](https://github.com/Prabhat9801/Image_Captioning_Model)
         """
     )
     
-    # Event handlers
     generate_btn.click(
         fn=generate_captions_gradio,
         inputs=[image_input],
         outputs=[greedy_output, beam_output]
     )
     
-    # Also trigger on image upload
     image_input.change(
         fn=generate_captions_gradio,
         inputs=[image_input],
         outputs=[greedy_output, beam_output]
     )
 
-# Launch the app
 if __name__ == "__main__":
     demo.launch()

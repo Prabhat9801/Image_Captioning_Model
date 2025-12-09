@@ -1,5 +1,4 @@
-tensorflow==2.10.0
-gradio==3.50.2
-pillow==9.5.0
-numpy==1.23.5
-h5py==3.7.0
+tensorflow==2.15.0
+gradio==4.44.0
+pillow==10.3.0
+numpy==1.26.4

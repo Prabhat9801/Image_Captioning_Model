@@ -1,14 +1,14 @@
-# Image Captioning Model - Hugging Face Deployment
+# 🖼️ Image Captioning Model - Hugging Face Deployment
 
 This folder contains everything needed to deploy the Image Captioning Model on Hugging Face Spaces.
 
 ## 📦 Files
 
-- `app.py` - Gradio application (rebuilds model architecture and loads weights)
+- `app.py` - Gradio application
 - `requirements.txt` - Python dependencies
-- `model_weights.h5` - Model weights only (22 MB)
-- `tokenizer_data.json` - Tokenizer vocabulary (JSON format)
-- `model_config.pkl` - Model configuration
+- `caption_model_final.keras` - Trained model (66 MB)
+- `tokenizer.pkl` - Tokenizer with vocabulary
+- `model_config.pkl` - Model configuration (max_caption_length, cnn_output_dim)
 
 ## 🚀 Quick Deploy to Hugging Face Spaces
 
@@ -22,36 +22,51 @@ This folder contains everything needed to deploy the Image Captioning Model on H
 5. Wait for build (5-10 minutes)
 6. Done! 🎉
 
-## 💡 How It Works
+## 🔧 Model Architecture
 
-This deployment uses a **different approach** than typical model loading:
+```
+Input Image (299x299x3)
+    ↓
+InceptionV3 (pretrained)
+    ↓
+Features (2048-dim) → BatchNorm → Dense(256) → BatchNorm
+                                                    ↓
+Caption Sequence → Embedding(256) → LSTM(256) -----+
+                                                    ↓
+                                                  Add
+                                                    ↓
+                                              Dense(256)
+                                                    ↓
+                                          Dense(vocab_size, softmax)
+```
 
-- **Instead of**: Loading the full H5 model (which has compatibility issues)
-- **We do**: Rebuild the model architecture in code and load only the weights
+## 📊 Model Details
 
-This avoids all the Keras version compatibility issues!
+- **CNN**: InceptionV3 (pretrained on ImageNet)
+- **RNN**: LSTM with 256 units
+- **Embedding**: 256 dimensions
+- **Vocabulary Size**: ~8,586 words
+- **Max Caption Length**: 34 words
+- **Dataset**: Flickr8k
+- **Training**: 15 epochs with early stopping
 
-## 🔧 Technical Details
+## 🎯 Caption Generation Methods
 
-- **TensorFlow**: 2.10.0
-- **Gradio**: 3.50.2
-- **Model Architecture**: CNN-RNN (InceptionV3 + LSTM)
-- **Weights File**: 22 MB (much smaller than full model)
-- **Tokenizer**: JSON format (no pickle compatibility issues)
+1. **Greedy Search**: Fast, selects most probable word at each step
+2. **Beam Search (K=3)**: Higher quality, explores top 3 candidates
 
-## ✅ Advantages of This Approach
+## 💡 Usage
 
-1. ✅ No Keras version conflicts
-2. ✅ Smaller file size (22 MB vs 66 MB)
-3. ✅ Works with any TensorFlow 2.x version
-4. ✅ Easy to modify model architecture if needed
-5. ✅ No pickle security concerns
+Upload an image and the model will generate:
+- A greedy search caption (fast)
+- A beam search caption (higher quality)
 
-## 📝 Notes
+## 📝 Technical Notes
 
-- The model architecture is defined in `app.py`
-- Weights are loaded using `model.load_weights()`
-- This is the recommended approach for deploying Keras models
+- Uses TensorFlow 2.15.0
+- Gradio 4.44.0 for the interface
+- Model saved in Keras 3.0 format (.keras)
+- Tokenizer saved as pickle file
 
 ---
 

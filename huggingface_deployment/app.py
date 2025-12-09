@@ -1,18 +1,16 @@
 import gradio as gr
 import tensorflow as tf
 import numpy as np
-import json
 import pickle
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Dense, LSTM, Embedding, Dropout, Add, BatchNormalization
+from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import img_to_array
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.applications.inception_v3 import InceptionV3, preprocess_input
 from PIL import Image
 
 # --- Configuration paths ---
-MODEL_WEIGHTS_PATH = "model_weights.h5"
-TOKENIZER_DATA_PATH = "tokenizer_data.json"
+MODEL_PATH = "caption_model_final.keras"
+TOKENIZER_PATH = "tokenizer.pkl"
 CONFIG_PATH = "model_config.pkl"
 
 # --- Load configurations ---
@@ -22,31 +20,14 @@ with open(CONFIG_PATH, 'rb') as f:
 max_caption_length = config['max_caption_length']
 cnn_output_dim = config['cnn_output_dim']
 
-# --- Load tokenizer data from JSON ---
-print("Loading tokenizer data...")
-with open(TOKENIZER_DATA_PATH, 'r') as f:
-    tokenizer_data = json.load(f)
-
-# Create a simple tokenizer class
-class SimpleTokenizer:
-    def __init__(self, word_index, index_word):
-        self.word_index = word_index
-        self.index_word = {int(k): v for k, v in index_word.items()}
-    
-    def texts_to_sequences(self, texts):
-        sequences = []
-        for text in texts:
-            words = text.lower().split()
-            sequence = [self.word_index.get(word, 0) for word in words]
-            sequences.append(sequence)
-        return sequences
-
-# Initialize tokenizer
-tokenizer = SimpleTokenizer(tokenizer_data['word_index'], tokenizer_data['index_word'])
+# --- Load tokenizer ---
+print("Loading tokenizer...")
+with open(TOKENIZER_PATH, 'rb') as f:
+    tokenizer = pickle.load(f)
 vocab_size = len(tokenizer.word_index) + 1
 print(f"Tokenizer loaded! Vocabulary size: {vocab_size}")
 
-# --- Load InceptionV3 for feature extraction ---
+# --- Load the pre-trained InceptionV3 model for feature extraction ---
 print("Loading InceptionV3 model...")
 inception_v3_model = InceptionV3(weights='imagenet', input_shape=(299, 299, 3))
 inception_v3_model = tf.keras.Model(
@@ -54,32 +35,10 @@ inception_v3_model = tf.keras.Model(
     outputs=inception_v3_model.layers[-2].output
 )
 
-# --- Rebuild the caption model architecture ---
-print("Building caption model architecture...")
-
-# Image feature input
-image_features_input = Input(shape=(cnn_output_dim,), name='Features_Input')
-image_features_bn = BatchNormalization()(image_features_input)
-image_features_dense = Dense(256, activation='relu')(image_features_bn)
-image_features_bn2 = BatchNormalization()(image_features_dense)
-
-# Sequence input
-sequence_input = Input(shape=(max_caption_length,), name='Sequence_Input')
-sequence_embedding = Embedding(vocab_size, 256, mask_zero=True)(sequence_input)
-sequence_lstm = LSTM(256)(sequence_embedding)
-
-# Merge features
-merged = Add()([image_features_bn2, sequence_lstm])
-merged_dense = Dense(256, activation='relu')(merged)
-output = Dense(vocab_size, activation='softmax', name='Output_Layer')(merged_dense)
-
-# Create model
-caption_model = Model(inputs=[image_features_input, sequence_input], outputs=output)
-
-# Load weights
-print("Loading model weights...")
-caption_model.load_weights(MODEL_WEIGHTS_PATH)
-print("Model loaded successfully!")
+# --- Load the captioning model ---
+print("Loading caption generation model...")
+caption_model = load_model(MODEL_PATH, compile=False)
+print("All models loaded successfully!")
 
 # --- Utility functions ---
 def preprocess_image(image_pil):
@@ -98,7 +57,7 @@ def extract_image_features(model, image_pil):
 
 def greedy_generator(image_features):
     """Generate caption using greedy search"""
-    in_text = 'start'
+    in_text = 'start '
     for _ in range(max_caption_length):
         sequence = tokenizer.texts_to_sequences([in_text])[0]
         sequence = pad_sequences([sequence], maxlen=max_caption_length).reshape((1, max_caption_length))
@@ -120,7 +79,7 @@ def greedy_generator(image_features):
 
 def beam_search_generator(image_features, K_beams=3):
     """Generate caption using beam search"""
-    start = [tokenizer.word_index.get('start', 1)]
+    start = [tokenizer.word_index['start']]
     start_word = [[start, 0.0]]
     
     for _ in range(max_caption_length):
@@ -135,7 +94,7 @@ def beam_search_generator(image_features, K_beams=3):
                     continue
                 next_cap, prob = s[0][:], s[1]
                 next_cap.append(w)
-                prob += np.log(preds[0][w] + 1e-10)
+                prob += np.log(preds[0][w] + 1e-10)  # Use log probabilities
                 temp.append([next_cap, prob])
 
         start_word = temp
@@ -158,23 +117,27 @@ def beam_search_generator(image_features, K_beams=3):
 
     return ' '.join(final_caption).strip()
 
-# --- Gradio Interface ---
+# --- Gradio Interface Function ---
 def generate_captions_gradio(image):
     """Main function for Gradio interface"""
     if image is None:
         return "Please upload an image.", "Please upload an image."
 
     try:
+        # Ensure image is in PIL format
         if not isinstance(image, Image.Image):
             image = Image.fromarray(image)
         
+        # Convert to RGB if needed
         if image.mode != 'RGB':
             image = image.convert('RGB')
 
+        # Extract features and generate captions
         image_features = extract_image_features(inception_v3_model, image)
         greedy_cap = greedy_generator(image_features)
         beam_cap = beam_search_generator(image_features, K_beams=3)
 
+        # Format output
         greedy_output = f"**Greedy Search:**\n\n{greedy_cap.capitalize()}"
         beam_output = f"**Beam Search (K=3):**\n\n{beam_cap.capitalize()}"
 
@@ -193,34 +156,38 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
         
         Upload an image and get captions using two different algorithms:
         - **Greedy Search**: Fast caption generation
-        - **Beam Search (K=3)**: Higher quality captions
+        - **Beam Search (K=3)**: Higher quality captions with beam search
+        
+        **Model Architecture**: CNN-RNN (InceptionV3 + LSTM)  
+        **Dataset**: Flickr8k
         """
     )
     
     with gr.Row():
         with gr.Column():
             image_input = gr.Image(type="pil", label="Upload Image")
-            generate_btn = gr.Button("Generate Captions", variant="primary")
+            generate_btn = gr.Button("Generate Captions", variant="primary", size="lg")
             
         with gr.Column():
-            greedy_output = gr.Textbox(label="Greedy Search Result", lines=3)
-            beam_output = gr.Textbox(label="Beam Search Result", lines=3)
+            greedy_output = gr.Textbox(label="Greedy Search Result", lines=4)
+            beam_output = gr.Textbox(label="Beam Search Result", lines=4)
     
     gr.Markdown(
         """
         ---
-        **Model**: CNN-RNN (InceptionV3 + LSTM) | **Dataset**: Flickr8k
-        
-        **Created by**: Prabhar Kumar Singh | [GitHub](https://github.com/Prabhat9801/Image_Captioning_Model)
+        **Created by**: Prabhar Kumar Singh  
+        **GitHub**: [Prabhat9801/Image_Captioning_Model](https://github.com/Prabhat9801/Image_Captioning_Model)
         """
     )
     
+    # Button click event
     generate_btn.click(
         fn=generate_captions_gradio,
         inputs=[image_input],
         outputs=[greedy_output, beam_output]
     )
     
+    # Auto-generate on image upload
     image_input.change(
         fn=generate_captions_gradio,
         inputs=[image_input],

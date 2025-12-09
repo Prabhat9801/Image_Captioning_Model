@@ -1,7 +1,7 @@
 import gradio as gr
 import tensorflow as tf
 import numpy as np
-import os
+import json
 import pickle
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import img_to_array
@@ -10,8 +10,8 @@ from tensorflow.keras.applications.inception_v3 import InceptionV3, preprocess_i
 from PIL import Image
 
 # --- Configuration paths ---
-MODEL_PATH = "caption_model_final.keras"
-TOKENIZER_PATH = "tokenizer.pkl"
+MODEL_PATH = "caption_model_final.h5"  # Using H5 format for compatibility
+TOKENIZER_DATA_PATH = "tokenizer_data.json"
 CONFIG_PATH = "model_config.pkl"
 
 # --- Load configurations ---
@@ -21,28 +21,30 @@ with open(CONFIG_PATH, 'rb') as f:
 max_caption_length = config['max_caption_length']
 cnn_output_dim = config['cnn_output_dim']
 
-# --- Load tokenizer ---
-print("Loading tokenizer...")
-import sys
+# --- Load tokenizer data from JSON ---
+print("Loading tokenizer data...")
+with open(TOKENIZER_DATA_PATH, 'r') as f:
+    tokenizer_data = json.load(f)
 
-# Add compatibility for legacy Keras tokenizer
-try:
-    with open(TOKENIZER_PATH, 'rb') as f:
-        tokenizer = pickle.load(f)
-except ModuleNotFoundError as e:
-    if 'keras.src.legacy' in str(e) or 'keras' in str(e):
-        # Handle legacy Keras compatibility issue
-        print("Handling legacy Keras compatibility...")
-        import keras
-        sys.modules['keras.preprocessing'] = keras.preprocessing
-        sys.modules['keras.preprocessing.text'] = keras.preprocessing.text
-        
-        with open(TOKENIZER_PATH, 'rb') as f:
-            tokenizer = pickle.load(f)
-    else:
-        raise
+# Create a simple tokenizer class
+class SimpleTokenizer:
+    def __init__(self, word_index, index_word):
+        self.word_index = word_index
+        # Convert string keys back to integers for index_word
+        self.index_word = {int(k): v for k, v in index_word.items()}
+    
+    def texts_to_sequences(self, texts):
+        sequences = []
+        for text in texts:
+            words = text.lower().split()
+            sequence = [self.word_index.get(word, 0) for word in words]
+            sequences.append(sequence)
+        return sequences
 
+# Initialize tokenizer
+tokenizer = SimpleTokenizer(tokenizer_data['word_index'], tokenizer_data['index_word'])
 vocab_size = len(tokenizer.word_index) + 1
+print(f"Tokenizer loaded successfully! Vocabulary size: {vocab_size}")
 
 # --- Load the pre-trained InceptionV3 model for feature extraction ---
 print("Loading InceptionV3 model...")
@@ -52,10 +54,10 @@ inception_v3_model = tf.keras.Model(
     outputs=inception_v3_model.layers[-2].output
 )
 
-# --- Load the captioning model ---
+# --- Load the captioning model (H5 format is more compatible) ---
 print("Loading caption generation model...")
 caption_model = load_model(MODEL_PATH, compile=False)
-print("✅ All models loaded successfully!")
+print("All models loaded successfully!")
 
 
 # --- Define utility functions ---

@@ -4,6 +4,9 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![TensorFlow](https://img.shields.io/badge/TensorFlow-2.x-orange.svg)](https://www.tensorflow.org/)
 [![Keras](https://img.shields.io/badge/Keras-2.x-red.svg)](https://keras.io/)
+[![Hugging Face Spaces](https://img.shields.io/badge/🤗%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/Prabhat9801/Image_Captioning_Model)
+
+> **🚀 [Try the Live Demo on Hugging Face Spaces!](https://huggingface.co/spaces/Prabhat9801/Image_Captioning_Model)**
 
 An advanced deep learning project that automatically generates natural language descriptions for images using a combination of Convolutional Neural Networks (CNN) and Recurrent Neural Networks (RNN). The model employs InceptionV3 for feature extraction and LSTM for sequence generation, with both Greedy Search and Beam Search decoding strategies.
 
@@ -34,6 +37,7 @@ This project implements an end-to-end image captioning system that can generate 
 - **BLEU Score Evaluation**: Comprehensive evaluation using BLEU-1 and BLEU-2 metrics
 - **Interactive Interface**: Gradio-based web interface for easy testing and deployment
 - **Pre-trained Model**: Ready-to-use trained model with saved weights and tokenizer
+- **🌐 Live Demo**: [Deployed on Hugging Face Spaces](https://huggingface.co/spaces/Prabhat9801/Image_Captioning_Model) - Try it now!
 
 ## ✨ Features
 
@@ -99,10 +103,22 @@ Image_Captioning_Model/
 │   ├── tokenizer.pkl               # Trained tokenizer
 │   └── model_config.pkl            # Model configuration (max_length, dimensions)
 │
-└── image_features/                  # Pre-extracted image features
-    ├── train_image_features.pkl    # Training set features (~56 MB)
-    ├── val_image_features.pkl      # Validation set features (~9 MB)
-    └── test_image_features.pkl     # Test set features (~1 MB)
+├── image_features/                  # Pre-extracted image features
+│   ├── train_image_features.pkl    # Training set features (~56 MB)
+│   ├── val_image_features.pkl      # Validation set features (~9 MB)
+│   └── test_image_features.pkl     # Test set features (~1 MB)
+│
+└── huggingface_deployment/          # 🚀 Ready-to-deploy package for Hugging Face Spaces
+    ├── app.py                      # Gradio web application
+    ├── requirements.txt            # Python dependencies
+    ├── caption_model_final.keras   # Model file (copy)
+    ├── tokenizer.pkl               # Tokenizer (copy)
+    ├── model_config.pkl            # Configuration (copy)
+    ├── README.md                   # Deployment documentation
+    ├── DEPLOYMENT_GUIDE.md         # Quick deployment guide
+    ├── DEPLOYMENT_SUMMARY.md       # Complete deployment summary
+    ├── test_deployment.py          # Pre-deployment validation script
+    └── .gitignore                  # Git ignore file
 ```
 
 ## 🚀 Installation
@@ -267,36 +283,66 @@ The model generates captions like:
 
 ## 🌐 Deployment
 
-### Deploying on Hugging Face Spaces
+### 🎉 Live Demo
 
-The notebook includes code for deploying the model as a Gradio app on Hugging Face Spaces:
+**The model is now deployed and available online!**
 
-1. **Create a Hugging Face Space**:
-   - Go to [Hugging Face Spaces](https://huggingface.co/spaces)
-   - Create a new Space with Gradio SDK
+🔗 **[Try it now on Hugging Face Spaces](https://huggingface.co/spaces/Prabhat9801/Image_Captioning_Model)**
 
-2. **Upload required files**:
-   - `app.py` (Gradio interface code from notebook)
-   - `model/caption_model_final.keras`
-   - `model_assets/tokenizer.pkl`
-   - `model_assets/model_config.pkl`
-   - `requirements.txt`
+Upload any image and get instant captions using both Greedy Search and Beam Search algorithms!
 
-3. **Create `requirements.txt`**:
-```txt
-tensorflow
-keras
-gradio
-pillow
-numpy
+---
+
+### 🚀 Quick Deploy to Hugging Face Spaces (5 Minutes)
+
+This repository includes a **ready-to-deploy package** in the `huggingface_deployment/` folder with everything you need!
+
+#### Option 1: Use the Ready-Made Deployment Folder (Recommended)
+
+All files are already prepared in `huggingface_deployment/`:
+
+1. **Navigate to the deployment folder**:
+```bash
+cd huggingface_deployment
 ```
 
-4. **The Space will automatically build and deploy your model!**
+2. **Run the pre-deployment test** (optional but recommended):
+```bash
+python test_deployment.py
+```
+
+3. **Create a Hugging Face Space**:
+   - Go to [Hugging Face Spaces](https://huggingface.co/spaces)
+   - Click "Create new Space"
+   - Name: `image-captioning-demo` (or your choice)
+   - SDK: Select **Gradio**
+   - Visibility: Public or Private
+
+4. **Upload all files** from the `huggingface_deployment/` folder:
+   - `app.py`
+   - `requirements.txt`
+   - `caption_model_final.keras`
+   - `tokenizer.pkl`
+   - `model_config.pkl`
+
+5. **Wait for automatic build** (5-10 minutes)
+
+6. **Your app is live!** 🎉
+
+For detailed instructions, see:
+- `huggingface_deployment/DEPLOYMENT_GUIDE.md` - Quick 5-minute guide
+- `huggingface_deployment/DEPLOYMENT_SUMMARY.md` - Complete deployment documentation
+- `huggingface_deployment/README.md` - Technical details
+
+#### Option 2: Manual Setup
+
+If you prefer to set up from scratch, follow the notebook's deployment section.
 
 ### Local Deployment
 
 Run the Gradio interface locally:
 ```bash
+cd huggingface_deployment
 python app.py
 ```
 
@@ -402,6 +448,7 @@ copies or substantial portions of the Software.
 **Prabhar Kumar Singh**  
 - GitHub: [@Prabhat9801](https://github.com/Prabhat9801)
 - Project Link: [https://github.com/Prabhat9801/Image_Captioning_Model](https://github.com/Prabhat9801/Image_Captioning_Model)
+- Live Demo: [https://huggingface.co/spaces/Prabhat9801/Image_Captioning_Model](https://huggingface.co/spaces/Prabhat9801/Image_Captioning_Model)
 
 ---
 
